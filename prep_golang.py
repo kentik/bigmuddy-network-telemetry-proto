@@ -9,11 +9,11 @@ import json
 import glob
 
 
-IMPORTPREFIX="github.com/cisco/"
+IMPORTPREFIX="github.com/kentik/"
 REPOROOT=os.path.basename(os.getcwd())
 SRCDIR="staging"
 TGTDIR="proto_go"
-PACKAGE="^(package .*);"
+PACKAGE="^package (.*);"
 #
 #  Attributes pertinent to building the go code to serve proto types
 #  for given gather points
@@ -246,7 +246,7 @@ if __name__ == "__main__":
     generateBasePathXlationMap()
     path2yang = createDictForPath2Yang(gatherPathMap)
     count = 0
-    print("Soft links to protos and adding 'go generate' directive in a.go...")
+    print("Generating golang bindings for .proto files. This stage takes some time...")
     l = createProtolist()
     for src,tgt,f in l:
 
@@ -256,64 +256,22 @@ if __name__ == "__main__":
         count = count + 1
 
         srcfilename = os.path.join(src, f)
-        tgtfilename = os.path.join(tgt, f)
-        docsfile = os.path.join(tgt, "a.go")
 
         package = extractPackageName(srcfilename)
 
-        #
-        # Make directory if it does not exist
-        os.makedirs(tgt, exist_ok=True)
-
-        #
-        # Make symlink
-        relativepath = extractRelativePath(tgtfilename, srcfilename)
+        mapArg = "--go_opt=M{}={}".format(srcfilename.replace(SRCDIR+"/", "", 1), package)
         try:
-            os.symlink(relativepath, tgtfilename)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-            pass
-
-        #
-        # Write docs for go generate ./...
-        # and add package if necessary
-        doccontent = """
-//go:generate protoc --go_out=plugins=grpc:. {}
-        """.format(f)
-
-        if not os.path.exists(docsfile):
-            path = "{}/{}".format(REPOROOT, tgt)
-            if path in path2yang:
-                yangPath = "// " + path2yang[path]
-            else:
-                yangPath = ""
-            doccontent = doccontent + """
-{}
-{}
-            """.format(yangPath, package)
-
-        # A messy way of creating it if it does not exist but reading content
-        # looking for previous instances of go gen directives.
-        with open(docsfile, "a+") as docfile:
-            docfile.seek(0)
-            if doccontent not in docfile.read():
-                docfile.write(doccontent)
-
-
-    print("Generating golang bindings for {} .proto files. This stage takes some time...".format(count))
-    try:
-        subprocess.check_call(["go", "generate", "./..."])
-    except subprocess.CalledProcessError as e:
-        print("'go generate' interprets .proto and builds go binding")
-        print(" *** STAGE DID NOT RUN CLEAN. ERROR MESSAGE ABOVE. COMMON PROBLEMS BELOW ***")
-        print(" GOROOT must be set to where golang is installed, minimum version go1.7 to run tests")
-        print(" GOPATH must be workspace root")
-        print(" Guidelines here: https://golang.org/doc/code.html")
-        print(" protoc-gen-go must be in PATH (https://github.com/golang/protobuf)")
-        print(" protoc must be in PATH")
-        print(" go get -u github.com/golang/protobuf/{proto,protoc-gen-go}")
-        print(e)
+            subprocess.check_call(["protoc", "--proto_path=staging", "--go_out=plugins=grpc:proto_go", "--go_opt=paths=source_relative", mapArg,  srcfilename])
+        except subprocess.CalledProcessError as e:
+            print(" *** STAGE DID NOT RUN CLEAN. ERROR MESSAGE ABOVE. COMMON PROBLEMS BELOW ***")
+            print(" GOROOT must be set to where golang is installed, minimum version go1.7 to run tests")
+            print(" GOPATH must be workspace root")
+            print(" Guidelines here: https://golang.org/doc/code.html")
+            print(" protoc-gen-go must be in PATH (https://github.com/golang/protobuf)")
+            print(" protoc must be in PATH")
+            print(" go get -u github.com/golang/protobuf/{proto,protoc-gen-go}")
+            print(e)
+            break
 
     print("Building and running tests for package. The build stage also takes some time...")
     try:
